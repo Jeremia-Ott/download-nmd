@@ -1,11 +1,16 @@
 package at.interactivecuriosity.imagedownload
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import at.interactivecuriosity.imagedownload.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,31 +42,20 @@ class MainActivity : AppCompatActivity() {
         deleteButton.setOnClickListener {
             deleteImage(fileName)
         }
+
+        val filter = IntentFilter().apply {
+            addAction(DownloadService.DOWNLOAD_COMPLETE)
+            addAction(DownloadService.DOWNLOAD_FAILED)
+        }
+        LocalBroadcastManager.getInstance(this).registerReceiver(downloadReceiver, filter)
     }
 
     private fun downloadImage(urlString: String, fileName: String) {
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val url = URL(urlString)
-                val connection = url.openConnection()
-                connection.connect()
-                val inputStream = connection.getInputStream()
-                val file = File(getExternalFilesDir(null), fileName)
-                FileOutputStream(file).use { output ->
-                    inputStream.copyTo(output)
-                }
-                val bitmap = BitmapFactory.decodeFile(file.absolutePath)
-                runOnUiThread {
-                    imageView.setImageBitmap(bitmap)
-                    Toast.makeText(this@MainActivity, "Bild heruntergeladen", Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                runOnUiThread {
-                    Toast.makeText(this@MainActivity, "Fehler beim Herunterladen", Toast.LENGTH_LONG).show()
-                }
-            }
+        val intent = Intent(this, DownloadService::class.java).apply {
+            putExtra(DownloadService.URL_KEY, urlString)
+            putExtra(DownloadService.FILENAME_KEY, fileName)
         }
+        startService(intent)
     }
 
     private fun deleteImage(fileName: String) {
@@ -71,6 +65,25 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 imageView.setImageBitmap(null)
                 Toast.makeText(this, "Bild gelöscht", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private val downloadReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                DownloadService.DOWNLOAD_COMPLETE -> {
+                    val filePath = File(getExternalFilesDir(null), fileName).absolutePath
+                    val bitmap = BitmapFactory.decodeFile(filePath)
+                    imageView.setImageBitmap(bitmap)
+                    Toast.makeText(this@MainActivity, "Bild heruntergeladen",
+                        Toast.LENGTH_SHORT).show()
+                }
+                DownloadService.DOWNLOAD_FAILED -> {
+                    imageView.setImageBitmap(null)
+                    Toast.makeText(this@MainActivity, "Fehler beim Herunterladen",
+                        Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
